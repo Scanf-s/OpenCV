@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+
 src = cv2.imread("images/img_1.png", cv2.IMREAD_GRAYSCALE)
 if src is None:
     exit()
