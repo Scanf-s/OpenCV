@@ -1,6 +1,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,pycharm+all,opencv
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,pycharm+all,opencv
 
+### VSCODE ###
+.vscode/
+
 ### OpenCV ###
 #OpenCV for Mac and Linux
 #build and release folders
