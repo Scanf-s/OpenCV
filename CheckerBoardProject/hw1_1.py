@@ -27,19 +27,27 @@ def show_image(window_name: str, image: cv2.Mat, window_size: tuple = WINDOW_SIZ
     cv2.waitKey(0)
 
 def edge_detection(image: cv2.Mat) -> cv2.Mat:
-    # Noise 제거
     blurred: cv2.Mat = cv2.GaussianBlur(image, BLUR_SIZE, 0)
 
-    # Median 임계값 계산
-    median: float = float(np.median(blurred))
-    low_threshold = int(max(0, (1.0 - 0.33) * median))
-    high_threshold = int(min(255, (1.0 + 0.33) * median))
+    # Otsu's method로 자동 임계값 계산
+    high_threshold, _ = cv2.threshold(
+        blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    low_threshold = high_threshold * 0.5
 
-    # Canny Edge 검출
     canny: cv2.Mat = cv2.Canny(blurred, low_threshold, high_threshold)
     return canny
 
 def detect_checkerboard_size(edge_image: cv2.Mat, original_image: cv2.Mat) -> tuple[int, int]:
+
+    # 클러스터링 결과 검증
+    def validate_clusters(num_clusters: int) -> int:
+        if 7 <= num_clusters <= 9:  # 8x8 체커보드의 경우
+            return 8
+        elif 9 <= num_clusters <= 11:  # 10x10 체커보드의 경우
+            return 10
+        return num_clusters - 1
+
     # 외곽선 검출
     contours, _ = cv2.findContours(edge_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1)
 
@@ -95,41 +103,47 @@ def detect_checkerboard_size(edge_image: cv2.Mat, original_image: cv2.Mat) -> tu
     print(f'가로 방향 코너 수: {num_x_clusters}')
     print(f'세로 방향 코너 수: {num_y_clusters}')
 
+    # 체커보드의 칸 수 계산 및 검증
+    num_squares_x = validate_clusters(num_x_clusters)
+    num_squares_y = validate_clusters(num_y_clusters)
+
+    # 가로, 세로 크기가 같은지 확인
+    if num_squares_x != num_squares_y:
+        # 더 신뢰할 수 있는 값 선택
+        if abs(8 - num_squares_x) < abs(8 - num_squares_y):
+            num_squares_y = num_squares_x
+        else:
+            num_squares_x = num_squares_y
+
     # 체커보드의 칸 수 계산
     num_squares_x = num_x_clusters - 1
     num_squares_y = num_y_clusters - 1
 
     print(f'체커보드 크기: {num_squares_x} x {num_squares_y}')
 
-    # 코너 포인트를 원본 이미지에 표시 (선택 사항)
+    # 코너 포인트를 원본 이미지에 표시
     for point in corner_points:
-        cv2.circle(original_image, tuple(point), 5, (0, 0, 255), -1)
+        cv2.circle(original_image, tuple(point), 5, (127, 127, 127), -1)
     show_image("Corners Detected", original_image)
 
     return num_squares_x, num_squares_y
 
 if __name__ == "__main__":
     # 이미지 Grayscale로 열기
-    image_path: str = "images/img.png"
+    image_path: str = "img.png"
     image: cv2.Mat = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if image is None:
         print("해당 경로에서 이미지를 찾을 수 없습니다. 이미지 경로를 확인하세요.")
         exit()
 
-    # 이미지 크기 조정 및 출력
+    # 이미지 크기 조정
     image = resize_image(image)
-    show_image(window_name="Source", image=image)
-
-    # 히스토그램 평활화
-    equalized = cv2.equalizeHist(image)
 
     # 정확한 검출을 위한 이미지 이진화
     binary = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)[1]
-    show_image(window_name="Binary", image=binary)
 
     # Canny Edge detecting 수행
     edge_detected_image: cv2.Mat = edge_detection(image)
-    show_image(window_name="Canny", image=edge_detected_image)
 
     # 사각형 검출
     num_squares_x, num_squares_y = detect_checkerboard_size(edge_detected_image, image)
