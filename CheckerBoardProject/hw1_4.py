@@ -1,6 +1,12 @@
 import cv2
 import numpy as np
 import sys
+import argparse
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='체커보드 말 검출 프로그램')
+    parser.add_argument('image_path', help='체커보드 이미지 파일 경로')
+    return parser.parse_args()
 
 def count_checker_pieces(image_path):
     image = cv2.imread(image_path)
@@ -47,10 +53,6 @@ def count_checker_pieces(image_path):
         center = (i[0], i[1])
         radius = i[2]
 
-        # 검출된 영역의 색상 평균으로 계산하는것 보다,
-        # 그냥 중심점의 색상 찍어서 가져오는게 더 정확한 결과가 나오길래
-        # 해당 방식을 선택했음
-
         # 중심점의 색상 가져오기
         center_color = image[center[1], center[0]]
 
@@ -69,7 +71,7 @@ def count_checker_pieces(image_path):
         # 원의 경계 그리기
         cv2.circle(output, center, radius, color, 2)
         # 중심점 그리기
-        cv2.circle(output, center, radius, color, 2)
+        cv2.circle(output, center, 2, color, 2)
 
     # 결과 출력
     print(f"밝은 색 말의 수: {light_count}")
@@ -81,13 +83,11 @@ def count_checker_pieces(image_path):
     cv2.destroyAllWindows()
 
 def main():
-    if len(sys.argv) != 2:
-        print("사용방법: python script.py <image_path>")
-        print("예시: python script.py checkerboard.jpg")
-        sys.exit(1)
+    # 명령줄 인자 파싱
+    args = parse_arguments()
 
-    image_path = sys.argv[1]
-    count_checker_pieces(image_path)
+    # 이미지 경로를 이용해 체커 말 수 계산
+    count_checker_pieces(args.image_path)
 
 if __name__ == "__main__":
     main()

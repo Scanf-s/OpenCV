@@ -1,22 +1,25 @@
 import cv2
 import numpy as np
 import sys
+import argparse
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='이미지 투시 변환 및 밝기 처리 프로그램')
+    parser.add_argument('image_path', help='이미지 파일 경로')
+    return parser.parse_args()
 
 def perspective_transform(image_path):
+    # 이미지 불러오기
     image = cv2.imread(image_path)
     if image is None:
         print(f"Error: Could not read image file '{image_path}'")
         sys.exit(1)
 
+    # 이미지를 YCrCb로 변환하고 히스토그램 평활화
     ycrcb_image = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
     y, cr, cb = cv2.split(ycrcb_image)
-    # 밝기(Y 채널)에 대해 히스토그램 평활화
     y = cv2.equalizeHist(y)
-
-    # 다시 합쳐주고 GRAYSCALE로 변환
     ycrcb_equalized = cv2.merge([y, cr, cb])
-
-    # 다시 BGR로 변환해준다.
     equalized_image = cv2.cvtColor(ycrcb_equalized, cv2.COLOR_YCrCb2BGR)
 
     points = []
@@ -64,7 +67,6 @@ def perspective_transform(image_path):
                 result = cv2.warpPerspective(equalized_image, matrix, (size, size))
 
                 # 밝기 정보를 이용하여 밝은 색은 흰색으로 변환
-                # 이미지를 HSV 색 공간으로 변환
                 hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
                 h, s, v = cv2.split(hsv)
 
@@ -75,10 +77,9 @@ def perspective_transform(image_path):
                 # 밝은 영역을 흰색으로 설정
                 result[bright_mask == 255] = [255, 255, 255]
 
+                # HSV를 그레이스케일로 변환 및 이미지 이진화
                 result = cv2.cvtColor(result, cv2.COLOR_HSV2BGR)
                 result = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-
-                # 이미지 이진화
                 threshold_value = 128
                 _, binary_image = cv2.threshold(result, threshold_value, 255, cv2.THRESH_BINARY)
 
@@ -97,13 +98,8 @@ def perspective_transform(image_path):
     cv2.destroyAllWindows()
 
 def main():
-    if len(sys.argv) != 2:
-        print("사용방법: python script.py <image_path>")
-        print("예시: python script.py checkerboard.jpg")
-        sys.exit(1)
-
-    image_path = sys.argv[1]
-    perspective_transform(image_path)
+    args = parse_arguments()  # 명령줄 인자 파싱
+    perspective_transform(args.image_path)  # 인자로 받은 이미지 경로를 사용
 
 if __name__ == "__main__":
     main()
