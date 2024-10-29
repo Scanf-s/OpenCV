@@ -9,6 +9,8 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 def resize_image(image: cv2.Mat, min_size: int = 500, max_size: int = 1000) -> cv2.Mat:
+    # 입력 이미지 크기 조절
+    # height, width 중 더 큰 값을 기준으로 정방형 행렬로 조절해주는 함수
     height, width = image.shape[:2]
     scale = 1.0
 
@@ -31,7 +33,7 @@ def preprocess_image(image: cv2.Mat) -> cv2.Mat:
     edges = cv2.Canny(equalized, 50, 150, apertureSize=3)
     return edges
 
-def detect_lines(edges: cv2.Mat) -> tuple[np.ndarray, np.ndarray]:
+def detect_lines(edges: cv2.Mat) -> tuple[np.ndarray|None, np.ndarray|None]:
     # 허프 변환을 이용하여 직선 검출
     lines = cv2.HoughLines(edges, 1, np.pi / 180, 150)
     if lines is None:
@@ -58,7 +60,7 @@ def detect_lines(edges: cv2.Mat) -> tuple[np.ndarray, np.ndarray]:
 
     return horizontal_lines, vertical_lines
 
-def compute_line_points(lines: list, img_shape: tuple) -> list:
+def compute_line_points(lines: np.ndarray, img_shape: tuple) -> list:
     # 이미지의 크기를 이용하여 직선의 시작점과 끝점을 계산
     line_points = []
     for rho, theta in lines:
@@ -142,10 +144,9 @@ def visualize_result(image: cv2.Mat, points: np.ndarray, h_lines_points: list, v
 
 def main():
     args = parse_arguments()
-
     image: cv2.Mat = cv2.imread(args.image_path, cv2.IMREAD_GRAYSCALE)
     if image is None:
-        print(f"Error: '{args.image_path}' 경로에서 이미지를 찾을 수 없습니다.")
+        print(f"이미지 파일을 불러올 수 없습니다. : '{args.image_path}'")
         sys.exit(1)
 
     image = resize_image(image)
@@ -156,7 +157,7 @@ def main():
     if h_lines is None or v_lines is None:
         sys.exit(1)
 
-    # 선분의 시작점과 끝점 계산
+    # 직선의 시작점과 끝점 계산
     h_lines_points = compute_line_points(h_lines, image.shape)
     v_lines_points = compute_line_points(v_lines, image.shape)
 
@@ -166,16 +167,20 @@ def main():
         print("교차점을 찾을 수 없습니다.")
         sys.exit(1)
 
-    # 교차점 클러스터링
+    # 교차점 클러스터링 (분류)
     clustered_points = cluster_points(intersections)
     if len(clustered_points) == 0:
-        print("코너 포인트를 클러스터링할 수 없습니다.")
+        print("코너로 선택된 점들을 클러스터링할 수 없습니다.")
         sys.exit(1)
 
     # 칸 수 계산
     num_squares_x, num_squares_y = sort_grid_points(clustered_points)
 
-    print(f"체커보드 크기: {num_squares_x} x {num_squares_y}")
+    # 클러스터링 된 포인트가 이미지 잡음에 의해 오류가 발생하는 경우가 존재해서
+    # num_squares_x와 num_squares_y 중 더 작은 값을 사용해주었다.
+    result = min(num_squares_x, num_squares_y)
+
+    print(f"체커보드 크기: {result} x {result}")
 
     # 결과 시각화
     visualize_result(image, clustered_points, h_lines_points, v_lines_points)

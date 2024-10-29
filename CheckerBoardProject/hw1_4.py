@@ -14,25 +14,42 @@ def count_checker_pieces(image_path):
         print(f"Error: 이미지 파일 '{image_path}'을(를) 읽을 수 없습니다.")
         sys.exit(1)
 
+    cv2.imshow('image', image)
+
     # 이미지를 그레이스케일로 변환
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # 가우시안 블러 적용
     blurred = cv2.GaussianBlur(gray, (9, 9), 2)
 
-    # 에지 검출
-    edges = cv2.Canny(blurred, 10, 90)
+    # 샤프닝 커널 정의
+    sharpening_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    # 이미지 샤프닝 적용
+    sharpened = cv2.filter2D(blurred, -1, sharpening_kernel)
+
+    # 적응형 이진화 적용
+    adaptive_thresh = cv2.adaptiveThreshold(
+        sharpened,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, # 가우시안 분포에 따른 가중치 합으로 임계값을 결정
+        cv2.THRESH_BINARY,
+        9, # 임계값을 적용할 영역의 사이즈
+        2
+    )
+
+    # 엣지 검출
+    edges = cv2.Canny(adaptive_thresh, 50, 150)
 
     # 허프 변환 원 검출
     circles = cv2.HoughCircles(
         edges,
         cv2.HOUGH_GRADIENT,
         dp=0.95,
-        minDist=15,
-        param1=100,
-        param2=20,
+        minDist=20,
+        param1=50,
+        param2=25,
         minRadius=5,
-        maxRadius=21
+        maxRadius=18
     )
 
     if circles is None:
@@ -60,7 +77,7 @@ def count_checker_pieces(image_path):
         center_intensity = 0.299 * center_color[2] + 0.587 * center_color[1] + 0.114 * center_color[0]
 
         # 밝기 값을 기준으로 말의 색상 분류
-        intensity_threshold = 130  # 임계값 조정 (기존 160 -> 130)
+        intensity_threshold = 130
         if center_intensity >= intensity_threshold:
             color = (0, 255, 0)  # 녹색 원 (밝은 색 말)
             light_count += 1
@@ -73,20 +90,14 @@ def count_checker_pieces(image_path):
         # 중심점 그리기
         cv2.circle(output, center, 2, color, 2)
 
-    # 결과 출력
-    print(f"밝은 색 말의 수: {light_count}")
-    print(f"어두운 색 말의 수: {dark_count}")
-
-    # 결과 이미지 표시
+    print(f"w: {light_count} b: {dark_count}")
     cv2.imshow('Detected Pieces', output)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 def main():
-    # 명령줄 인자 파싱
     args = parse_arguments()
 
-    # 이미지 경로를 이용해 체커 말 수 계산
     count_checker_pieces(args.image_path)
 
 if __name__ == "__main__":

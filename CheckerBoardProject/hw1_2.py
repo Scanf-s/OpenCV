@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import argparse
 
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='이미지 투시 변환 및 밝기 처리 프로그램')
     parser.add_argument('image_path', help='이미지 파일 경로')
@@ -12,7 +13,7 @@ def perspective_transform(image_path):
     # 이미지 불러오기
     image = cv2.imread(image_path)
     if image is None:
-        print(f"Error: Could not read image file '{image_path}'")
+        print(f"이미지 파일을 불러올 수 없습니다. : '{image_path}'")
         sys.exit(1)
 
     # 이미지를 YCrCb로 변환하고 히스토그램 평활화
@@ -29,10 +30,7 @@ def perspective_transform(image_path):
         if event == cv2.EVENT_LBUTTONDOWN:
             points.append([x, y])
             # 클릭한 위치에 원 그리기
-            cv2.circle(equalized_image, (x, y), 3, (0, 0, 255), -1)
-            # 클릭한 점 순서 표시
-            cv2.putText(equalized_image, str(len(points)), (x + 10, y + 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+            cv2.circle(equalized_image, (x, y), 2, (0, 0, 255), -1)
             cv2.imshow('Image', equalized_image)
 
             if len(points) == 4:
@@ -83,8 +81,12 @@ def perspective_transform(image_path):
                 threshold_value = 128
                 _, binary_image = cv2.threshold(result, threshold_value, 255, cv2.THRESH_BINARY)
 
-                # 결과 이미지 표시
-                cv2.imshow('Transformed', binary_image)
+                # 이미지 전처리 (모폴로지 연산 적용)
+                # https://wjunsea.tistory.com/5
+                # MORPH_OPEN 연산은 침식 연산(객체가 홀쭉해짐) 후, 팽창 연산(객체가 뚱뚱해짐)을 수행한다.
+                binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+
+                cv2.imshow('Result', binary_image)
 
     print("아래 순서대로 이미지 모서리를 클릭해주세요:")
     print("1. 좌상단 모서리")
@@ -97,9 +99,6 @@ def perspective_transform(image_path):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-def main():
-    args = parse_arguments()  # 명령줄 인자 파싱
-    perspective_transform(args.image_path)  # 인자로 받은 이미지 경로를 사용
-
 if __name__ == "__main__":
-    main()
+    args = parse_arguments()
+    perspective_transform(args.image_path)
