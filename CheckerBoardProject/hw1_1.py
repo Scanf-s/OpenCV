@@ -1,137 +1,191 @@
 import cv2
 import numpy as np
+import sys
+import argparse
 
-WINDOW_SIZE: tuple[int, int] = (800, 800)
-BLUR_SIZE: tuple[int, int] = (3, 3)
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='체커보드 크기 검출 프로그램')
+    parser.add_argument('image_path', help='체커보드 이미지 경로')
+    return parser.parse_args()
 
 def resize_image(image: cv2.Mat, min_size: int = 500, max_size: int = 1000) -> cv2.Mat:
+    # 입력 이미지 크기 조절
+    # height, width 중 더 큰 값을 기준으로 정방형 행렬로 조절해주는 함수
     height, width = image.shape[:2]
     scale = 1.0
 
-    # 이미지가 너무 작은 경우 확대
     if min(height, width) < min_size:
         scale = min_size / min(height, width)
-    # 이미지가 너무 큰 경우 축소
     elif max(height, width) > max_size:
         scale = max_size / max(height, width)
 
     if scale != 1.0:
         resized_image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         return resized_image
-    return image  # 크기 조정이 불필요한 경우 원본 이미지 반환
+    return image
 
-def show_image(window_name: str, image: cv2.Mat, window_size: tuple = WINDOW_SIZE) -> None:
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window_name, *window_size)
-    cv2.imshow(window_name, image)
+def preprocess_image(image: cv2.Mat) -> cv2.Mat:
+    # 노이즈 제거를 위한 블러링
+    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+    # 대비 조절 (히스토그램 평활화)
+    equalized = cv2.equalizeHist(blurred)
+    # Canny 엣지 검출
+    edges = cv2.Canny(equalized, 50, 150, apertureSize=3)
+    return edges
+
+def detect_lines(edges: cv2.Mat) -> tuple[np.ndarray|None, np.ndarray|None]:
+    # 허프 변환을 이용하여 직선 검출
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 150)
+    if lines is None:
+        print("직선을 찾을 수 없습니다.")
+        return None, None
+
+    # 수평선과 수직선 분류
+    horizontal_lines = []
+    vertical_lines = []
+
+    for line in lines:
+        rho, theta = line[0]
+        angle = theta * (180 / np.pi)
+        if (angle < 10 or angle > 170):
+            # 수직선
+            vertical_lines.append((rho, theta))
+        elif (80 < angle < 100):
+            # 수평선
+            horizontal_lines.append((rho, theta))
+
+    if len(horizontal_lines) == 0 or len(vertical_lines) == 0:
+        print("수평선 또는 수직선을 충분히 찾을 수 없습니다.")
+        return None, None
+
+    return horizontal_lines, vertical_lines
+
+def compute_line_points(lines: np.ndarray, img_shape: tuple) -> list:
+    # 이미지의 크기를 이용하여 직선의 시작점과 끝점을 계산
+    line_points = []
+    for rho, theta in lines:
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x0 = a * rho
+        y0 = b * rho
+        # 직선의 시작점과 끝점 계산
+        x1 = int(x0 + 1000 * (-b))
+        y1 = int(y0 + 1000 * (a))
+        x2 = int(x0 - 1000 * (-b))
+        y2 = int(y0 - 1000 * (a))
+        line_points.append(((x1, y1), (x2, y2)))
+    return line_points
+
+def find_intersections(h_lines: list, v_lines: list) -> np.ndarray:
+    # 수평선과 수직선의 교차점 계산
+    intersections = []
+    for h_line in h_lines:
+        for v_line in v_lines:
+            pt = compute_intersection(h_line, v_line)
+            if pt is not None:
+                intersections.append(pt)
+    return np.array(intersections)
+
+def compute_intersection(line1: tuple, line2: tuple) -> tuple | None:
+    # 두 직선의 교차점을 계산
+    (x1, y1), (x2, y2) = line1
+    (x3, y3), (x4, y4) = line2
+
+    denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if denominator == 0:
+        return None  # 평행선
+
+    px = ((x1 * y2 - y1 * x2)*(x3 - x4) - (x1 - x2)*(x3 * y4 - y3 * x4)) / denominator
+    py = ((x1 * y2 - y1 * x2)*(y3 - y4) - (y1 - y2)*(x3 * y4 - y3 * x4)) / denominator
+
+    return int(px), int(py)
+
+def cluster_points(points: np.ndarray, distance_threshold: int = 20) -> np.ndarray:
+    # points를 클러스터링하여 중복 제거
+    clustered_points = []
+    for point in points:
+        if not any(np.linalg.norm(point - np.array(other_point)) < distance_threshold for other_point in clustered_points):
+            clustered_points.append(point)
+    return np.array(clustered_points)
+
+def sort_grid_points(points: np.ndarray) -> tuple[int, int]:
+    # points를 그리드 형태로 정렬하고 행과 열의 개수를 계산
+    # y 좌표 기준으로 정렬하여 행 분류
+    sorted_points = points[points[:,1].argsort()]
+    rows = []
+    current_row = [sorted_points[0]]
+    for point in sorted_points[1:]:
+        if abs(point[1] - current_row[-1][1]) < 20:
+            current_row.append(point)
+        else:
+            rows.append(current_row)
+            current_row = [point]
+    rows.append(current_row)
+
+    # 각 행에서 x 좌표로 정렬
+    for row in rows:
+        row.sort(key=lambda p: p[0])
+
+    num_rows = len(rows)
+    num_cols = max(len(row) for row in rows)
+
+    return num_cols - 1, num_rows - 1  # 내부 교차점 개수이므로 -1
+
+def visualize_result(image: cv2.Mat, points: np.ndarray, h_lines_points: list, v_lines_points: list):
+    image_color = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    # 교차점 표시
+    for point in points:
+        cv2.circle(image_color, tuple(point), 5, (0, 0, 255), -1)
+    # 선분 표시
+    for line in h_lines_points + v_lines_points:
+        cv2.line(image_color, line[0], line[1], (0, 255, 0), 1)
+    cv2.imshow('Result', image_color)
     cv2.waitKey(0)
 
-def edge_detection(image: cv2.Mat) -> cv2.Mat:
-    # Noise 제거
-    blurred: cv2.Mat = cv2.GaussianBlur(image, BLUR_SIZE, 0)
-
-    # Median 임계값 계산
-    median: float = float(np.median(blurred))
-    low_threshold = int(max(0, (1.0 - 0.33) * median))
-    high_threshold = int(min(255, (1.0 + 0.33) * median))
-
-    # Canny Edge 검출
-    canny: cv2.Mat = cv2.Canny(blurred, low_threshold, high_threshold)
-    return canny
-
-def detect_checkerboard_size(edge_image: cv2.Mat, original_image: cv2.Mat) -> tuple[int, int]:
-    # 외곽선 검출
-    contours, _ = cv2.findContours(edge_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_L1)
-
-    # 코너 포인트 저장할 리스트
-    corner_points = []
-
-    for cnt in contours:
-        # 근사화 정확도 조절
-        epsilon = 0.013 * cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, epsilon, True)
-        # 다각형이 사각형일 경우에만 처리
-        if len(approx) == 4 :
-            for point in approx:
-                corner = point[0]
-                corner_points.append(corner)
-
-    if not corner_points:
-        print("코너를 찾을 수 없습니다.")
-        return (0, 0)
-
-    # 중복된 코너 제거
-    corner_points = np.unique(corner_points, axis=0)
-
-    # 코너의 x, y 좌표 추출
-    x_coords = corner_points[:, 0]
-    y_coords = corner_points[:, 1]
-
-    # x 좌표 클러스터링
-    x_sorted = np.sort(x_coords)
-    x_diffs = np.diff(x_sorted)
-    x_median_diff = np.median(x_diffs)
-    x_threshold = x_median_diff * 0.5 if x_median_diff > 0 else 10  # 임계값 설정
-
-    x_clusters = [x_sorted[0]]
-    for x in x_sorted[1:]:
-        if abs(x - x_clusters[-1]) > x_threshold:
-            x_clusters.append(x)
-    num_x_clusters = len(x_clusters)
-
-    # y 좌표 클러스터링
-    y_sorted = np.sort(y_coords)
-    y_diffs = np.diff(y_sorted)
-    y_median_diff = np.median(y_diffs)
-    y_threshold = y_median_diff * 0.5 if y_median_diff > 0 else 10  # 임계값 설정
-
-    y_clusters = [y_sorted[0]]
-    for y in y_sorted[1:]:
-        if abs(y - y_clusters[-1]) > y_threshold:
-            y_clusters.append(y)
-    num_y_clusters = len(y_clusters)
-
-    # 결과 출력
-    print(f'가로 방향 코너 수: {num_x_clusters}')
-    print(f'세로 방향 코너 수: {num_y_clusters}')
-
-    # 체커보드의 칸 수 계산
-    num_squares_x = num_x_clusters - 1
-    num_squares_y = num_y_clusters - 1
-
-    print(f'체커보드 크기: {num_squares_x} x {num_squares_y}')
-
-    # 코너 포인트를 원본 이미지에 표시 (선택 사항)
-    for point in corner_points:
-        cv2.circle(original_image, tuple(point), 5, (0, 0, 255), -1)
-    show_image("Corners Detected", original_image)
-
-    return num_squares_x, num_squares_y
-
-if __name__ == "__main__":
-    # 이미지 Grayscale로 열기
-    image_path: str = "images/img.png"
-    image: cv2.Mat = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+def main():
+    args = parse_arguments()
+    image: cv2.Mat = cv2.imread(args.image_path, cv2.IMREAD_GRAYSCALE)
     if image is None:
-        print("해당 경로에서 이미지를 찾을 수 없습니다. 이미지 경로를 확인하세요.")
-        exit()
+        print(f"이미지 파일을 불러올 수 없습니다. : '{args.image_path}'")
+        sys.exit(1)
 
-    # 이미지 크기 조정 및 출력
     image = resize_image(image)
-    show_image(window_name="Source", image=image)
 
-    # 히스토그램 평활화
-    equalized = cv2.equalizeHist(image)
+    edges = preprocess_image(image)
 
-    # 정확한 검출을 위한 이미지 이진화
-    binary = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)[1]
-    show_image(window_name="Binary", image=binary)
+    h_lines, v_lines = detect_lines(edges)
+    if h_lines is None or v_lines is None:
+        sys.exit(1)
 
-    # Canny Edge detecting 수행
-    edge_detected_image: cv2.Mat = edge_detection(image)
-    show_image(window_name="Canny", image=edge_detected_image)
+    # 직선의 시작점과 끝점 계산
+    h_lines_points = compute_line_points(h_lines, image.shape)
+    v_lines_points = compute_line_points(v_lines, image.shape)
 
-    # 사각형 검출
-    num_squares_x, num_squares_y = detect_checkerboard_size(edge_detected_image, image)
+    # 교차점 계산
+    intersections = find_intersections(h_lines_points, v_lines_points)
+    if len(intersections) == 0:
+        print("교차점을 찾을 수 없습니다.")
+        sys.exit(1)
+
+    # 교차점 클러스터링 (분류)
+    clustered_points = cluster_points(intersections)
+    if len(clustered_points) == 0:
+        print("코너로 선택된 점들을 클러스터링할 수 없습니다.")
+        sys.exit(1)
+
+    # 칸 수 계산
+    num_squares_x, num_squares_y = sort_grid_points(clustered_points)
+
+    # 클러스터링 된 포인트가 이미지 잡음에 의해 오류가 발생하는 경우가 존재해서
+    # num_squares_x와 num_squares_y 중 더 작은 값을 사용해주었다.
+    result = min(num_squares_x, num_squares_y)
+
+    print(f"체커보드 크기: {result} x {result}")
+
+    # 결과 시각화
+    visualize_result(image, clustered_points, h_lines_points, v_lines_points)
 
     cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
