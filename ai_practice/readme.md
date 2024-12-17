@@ -1,4 +1,8 @@
 # 프로젝트 설치 방법
+
+## 프로젝트 구조
+![image](https://github.com/user-attachments/assets/745369a9-6f63-4d1d-a3f6-5a8c6afa4c6c)
+
 ai_practice의 부모 폴더로 되돌아가서, 해당 폴더에 있는 pyproject.toml을 사용하여 라이브러리를 설치해야 합니다.
 설치 방법은 아래와 같습니다.
 ```shell
