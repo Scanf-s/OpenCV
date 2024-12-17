@@ -2,17 +2,23 @@ import numpy as np
 import cv2
 import struct
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
 from sklearn.metrics import accuracy_score, classification_report
 import time
 from sklearn.preprocessing import StandardScaler
+# https://junstar92.tistory.com/116
+# https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
 
 
 class FeatureExtractor:
+    """
+    특징점을 추출하는 method를 모아둔 클래스
+    """
     def __init__(self, method='HOG'):
         self.method = method
 
-    def extract_hog(self, img):
+    @staticmethod
+    def extract_hog(img):
         # HOG 특징 추출 방법
         win_size = (28, 28)
         cell_size = (4, 4)
@@ -24,19 +30,20 @@ class FeatureExtractor:
                                 cell_size, num_bins)
         return hog.compute(img).flatten()
 
-    def extract_sift(self, img):
+    @staticmethod
+    def extract_sift(img):
         # SIFT 특징 추출 방법
         sift = cv2.SIFT_create()
         keypoints, descriptors = sift.detectAndCompute(img, None)
         if descriptors is None:
             return np.zeros(128)  # SIFT 특징의 기본 크기
-        return descriptors.flatten()[:128]  # 첫 128개 특징만 사용
+        return descriptors.mean(axis=0)
 
     # https://076923.github.io/posts/Python-opencv-38/
     def extract_orb(self, img):
         # ORB 파라미터 설정
         orb = cv2.ORB_create(
-            nfeatures=32,  # 특징점 개수
+            nfeatures=16,  # 특징점 개수
             scaleFactor=1.2,  # 스케일 factor
             nlevels=8,  # 피라미드 레벨 수
             edgeThreshold=2,  # 엣지 임계값
@@ -69,20 +76,6 @@ class FeatureExtractor:
                     cell_keypoints.sort(key=lambda x: x.response, reverse=True)
                     selected_keypoints.append(cell_keypoints[0])
 
-        # 특징점이 충분하지 않은 경우 처리
-        if len(selected_keypoints) < 32:
-            # 부족한 특징점을 이미지 중심에서 방사형으로 추가
-            center_x, center_y = width // 2, height // 2
-            for r in range(10, max(width, height), 10):
-                for theta in range(0, 360, 45):
-                    if len(selected_keypoints) >= 32:
-                        break
-                    x = center_x + int(r * np.cos(np.radians(theta)))
-                    y = center_y + int(r * np.sin(np.radians(theta)))
-                    if 0 <= x < width and 0 <= y < height:
-                        kp = cv2.KeyPoint(x, y, 31)
-                        selected_keypoints.append(kp)
-
         # 디스크립터 계산
         keypoints, descriptors = orb.compute(img, selected_keypoints)
 
@@ -92,8 +85,7 @@ class FeatureExtractor:
         # 디스크립터를 일정한 크기로 만들기
         feature_vector = np.zeros(256, dtype=np.uint8)
         descriptors_flattened = descriptors.flatten()
-        feature_vector[:min(256, len(descriptors_flattened))] = descriptors_flattened[
-                                                                :min(256, len(descriptors_flattened))]
+        feature_vector[:min(256, len(descriptors_flattened))] = descriptors_flattened[:min(256, len(descriptors_flattened))]
 
         return feature_vector
 
@@ -109,6 +101,9 @@ class FeatureExtractor:
 
 
 class DigitClassifier:
+    """
+    10진수를 분류하는 모델 클래스
+    """
     def __init__(self, model_type='kNN', feature_type='HOG'):
         self.feature_extractor = FeatureExtractor(feature_type)
         self.model = self._get_model(model_type)
@@ -117,14 +112,13 @@ class DigitClassifier:
     def _get_model(self, model_type):
         if model_type == 'kNN':
             if self.feature_extractor.method == 'ORB':
-                # ORB의 경우 Hamming distance 사용
+                # ORB는 이진 벡터로 표현되므로, 두 이진 벡터간의 차이를 측정하는 hamming metric사용
                 return KNeighborsClassifier(n_neighbors=3, metric='hamming')
             else:
                 return KNeighborsClassifier(n_neighbors=3)
         elif model_type == 'SVM':
             if self.feature_extractor.method == 'ORB':
-                # ORB의 경우 다른 커널 사용
-                return SVC(kernel='linear', C=1.0)
+                return LinearSVC(C=1.0, max_iter=10000)
             else:
                 return SVC(kernel='rbf', C=1.0)
         else:
@@ -145,12 +139,10 @@ class DigitClassifier:
         return np.array(features)
 
     def fit(self, X, y):
-        print("특징 추출 시작...")
+        print("특징 추출 시작")
         start_time = time.time()
         X_features = self.extract_features_batch(X)
         feature_time = time.time() - start_time
-
-        print("특징 스케일링...")
         X_features = self.scaler.fit_transform(X_features)
 
         print("모델 학습 시작...")
@@ -158,8 +150,8 @@ class DigitClassifier:
         self.model.fit(X_features, y)
         train_time = time.time() - start_time
 
-        print(f"특징 추출 시간: {feature_time:.2f}초")
-        print(f"학습 시간: {train_time:.2f}초")
+        print(f"특징 추출 시간: {feature_time}초")
+        print(f"학습 시간: {train_time}초")
 
     def predict(self, X):
         X_features = self.extract_features_batch(X)
@@ -167,17 +159,17 @@ class DigitClassifier:
         start_time = time.time()
         predictions = self.model.predict(X_features)
         inference_time = time.time() - start_time
-        print(f"추론 시간: {inference_time:.2f}초")
+        print(f"추론 시간: {inference_time}초")
         return predictions
 
 
 def evaluate_model(model, X_test, y_test):
     predictions = model.predict(X_test)
     accuracy = accuracy_score(y_test, predictions)
-    report = classification_report(y_test, predictions)
+    report = classification_report(y_test, predictions) # https://wikidocs.net/193994
 
-    print(f"정확도: {accuracy:.4f}")
-    print("\n분류 리포트:")
+    print(f"정확도: {accuracy:.4f}\n\n")
+    print("결과:")
     print(report)
 
 
@@ -190,7 +182,7 @@ def load_images(file_path):
 
 def load_labels(file_path):
     with open(file_path, 'rb') as f:
-        magic, num = struct.unpack('>II', f.read(8))
+        _, _ = struct.unpack('>II', f.read(8))
         labels = np.fromfile(f, dtype=np.uint8)
     return labels
 
@@ -210,18 +202,17 @@ def load_mnist():
     return X_train, X_test, y_train, y_test
 
 
-# 사용 예시
 def main():
     # MNIST 데이터 로드
     X_train, X_test, y_train, y_test = load_mnist()
-    models = ['kNN', 'SVM']
-    features = ['HOG', 'SIFT', 'ORB']  # ORB 추가
+    models = ['kNN', 'SVM'] # 모델
+    features = ['HOG', 'SIFT', 'ORB'] # 특징 벡터 추출 방법
 
     results = {}
-    # 모든 모델과 특징 추출 방법 조합을 테스트
     for model_type in models:
         for feature_type in features:
-            print(f"\n{model_type} with {feature_type} 실험")
+            print("#" * 50)
+            print(f"\n{model_type} with {feature_type} 테스트")
             classifier = DigitClassifier(model_type, feature_type)
 
             # 학습
@@ -234,6 +225,7 @@ def main():
             results[f"{model_type}_{feature_type}"] = {
                 "accuracy": accuracy_score(y_test, classifier.predict(X_test))
             }
+        print("#" * 50)
 
     return results
 

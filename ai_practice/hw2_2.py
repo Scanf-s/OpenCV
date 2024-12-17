@@ -17,6 +17,7 @@ BATCH_SIZE = 16
 
 # 이미지 분류 예시 문서
 # https://pytorch.org/tutorials/beginner/transfer_learning_tutorial.html
+# https://machinelearningmastery.com/how-to-develop-a-convolutional-neural-network-from-scratch-for-mnist-handwritten-digit-classification/
 class EmpireStateModel:
     def __init__(self, model_path='empire_state_building_classification_model.pth'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -250,7 +251,7 @@ def print_dataset_info():
 
 def main():
     if len(sys.argv) != 2:
-        print("실행 방법 : python hw2_2.py <image_path>")
+        print("실행 방법 : python hw2_2.py 이미지경로")
         sys.exit(1)
 
     test_image_path = sys.argv[1]
