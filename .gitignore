@@ -273,4 +273,17 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
+# mnist-dataset
+t10k*/
+train*/
+t10k*
+train*
+
+# empire dataset
+*empire/*
+*empire*/*
+*empire*
+test_data
+training_data
+
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm+all,opencv

@@ -9,6 +9,16 @@ readme = "README.md"
 python = "^3.12"
 opencv-python = "^4.10.0.84"
 matplotlib = "^3.9.2"
+numpy = ">=1.26.0,<2.1.0"
+scikit-learn = "^1.6.0"
+scikit-image = "^0.25.0"
+jupyter = "^1.1.1"
+update = "^0.0.1"
+tensorflow = "^2.18.0"
+torch = "^2.5.1"
+torchvision = "^0.20.1"
+pillow = "^11.0.0"
+grad-cam = "^1.5.4"
 
 
 [build-system]
