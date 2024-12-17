@@ -280,10 +280,12 @@ t10k*
 train*
 
 # empire dataset
-*empire/*
-*empire*/*
-*empire*
+empire
+empire_test
+not_empire
+not_empire_test
 test_data
 training_data
+empire_state_building_classification_model.pth
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm+all,opencv
